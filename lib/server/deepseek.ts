@@ -67,7 +67,7 @@ export async function streamDeepSeek(
     upstream = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
-        Authorization: \`Bearer \${apiKey}\`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -97,21 +97,21 @@ export async function streamDeepSeek(
       const reader = upstream.body!.getReader();
       let pending = '';
       const sendDelta = (text: string) => {
-        if (text) output.enqueue(encoder.encode(\`data: \${JSON.stringify({ delta: { text } })}\\n\\n\`));
+        if (text) output.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: { text } })}\n\n`));
       };
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           pending += decoder.decode(value, { stream: true });
-          const lines = pending.split('\\n');
+          const lines = pending.split('\n');
           pending = lines.pop() ?? '';
           for (const raw of lines) {
             const line = raw.trim();
             if (!line.startsWith('data:')) continue;
             const data = line.slice(5).trim();
             if (data === '[DONE]') {
-              output.enqueue(encoder.encode('data: [DONE]\\n\\n'));
+              output.enqueue(encoder.encode('data: [DONE]\n\n'));
               output.close();
               return;
             }
@@ -132,12 +132,12 @@ export async function streamDeepSeek(
             } catch { /* ignore trailing partial event */ }
           }
         }
-        output.enqueue(encoder.encode('data: [DONE]\\n\\n'));
+        output.enqueue(encoder.encode('data: [DONE]\n\n'));
         output.close();
       } catch {
         try {
-          sendDelta('\\n\\n（连接中断，请重试。）');
-          output.enqueue(encoder.encode('data: [DONE]\\n\\n'));
+          sendDelta('\n\n（连接中断，请重试。）');
+          output.enqueue(encoder.encode('data: [DONE]\n\n'));
           output.close();
         } catch { /* client disconnected */ }
       } finally {

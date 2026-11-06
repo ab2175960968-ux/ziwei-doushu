@@ -276,13 +276,25 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
 
   const streamResponse = async (apiMessages: { role: 'user' | 'assistant'; content: string }[]) => {
     try {
-      const res = await fetch('/api/interpret', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chart, messages: apiMessages }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 100_000);
+      let res: Response;
+      try {
+        res = await fetch('/api/interpret', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chart, messages: apiMessages }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (res.status === 404) throw new Error('api-missing');
-      if (!res.ok) throw new Error('请求失败');
+      if (!res.ok) {
+        let detail = '解读请求失败（HTTP ' + res.status + '）。';
+        try { const payload = await res.clone().json(); if (typeof payload.error === 'string') detail = payload.error; } catch { /* keep status message */ }
+        throw new Error(detail);
+      }
       if (!res.body) throw new Error('无响应流');
 
       const reader = res.body.getReader();
@@ -316,7 +328,10 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       }
     } catch (e) {
       const missing = e instanceof Error && e.message === 'api-missing';
-      setMessages(prev => [...prev, { role: 'assistant', content: missing ? '开源版不含 AI 解读接口（/api/interpret），需要你自己实现后才能用，详见 README「快速开始」。排盘本身不需要任何 API Key。' : '解读失败，请稍后重试。' }]);
+      const detail = e instanceof Error && e.name === 'AbortError'
+        ? 'AI 解读等待超过 100 秒，已自动停止。请检查 DeepSeek 服务状态后重试。'
+        : e instanceof Error ? e.message : '发生未知错误，请稍后重试。';
+      setMessages(prev => [...prev, { role: 'assistant', content: missing ? '当前部署缺少 AI 解读接口（/api/interpret）。排盘本身不需要 API Key。' : detail }]);
     } finally {
       setLoading(false);
       loadingRef.current = false;

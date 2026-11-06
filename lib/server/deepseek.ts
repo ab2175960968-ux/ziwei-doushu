@@ -80,10 +80,12 @@ export async function streamDeepSeek(
       signal: controller.signal,
     });
   } catch {
+    clearTimeout(timeoutId);
     return jsonError('无法连接 AI 服务，请稍后重试。', 502);
   }
 
   if (!upstream.ok || !upstream.body) {
+    clearTimeout(timeoutId);
     // Do not forward provider response bodies; they may contain sensitive diagnostics.
     return jsonError('AI 服务请求失败，请检查 API Key、账户余额和模型配置。', upstream.status >= 400 ? 502 : 503);
   }

@@ -79,15 +79,30 @@ export async function streamDeepSeek(
       }),
       signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
     clearTimeout(timeoutId);
-    return jsonError('无法连接 AI 服务，请稍后重试。', 502);
+    if (error instanceof Error && error.name === 'AbortError') {
+      return jsonError('AI 服务连接超时（90 秒），请稍后重试。', 504);
+    }
+    console.error('[AI interpret] Upstream connection failed:', error instanceof Error ? error.message : 'unknown error');
+    return jsonError('无法连接 DeepSeek 服务，请检查网络或稍后重试。', 502);
   }
 
   if (!upstream.ok || !upstream.body) {
     clearTimeout(timeoutId);
-    // Do not forward provider response bodies; they may contain sensitive diagnostics.
-    return jsonError('AI 服务请求失败，请检查 API Key、账户余额和模型配置。', upstream.status >= 400 ? 502 : 503);
+    let providerMessage = '';
+    try {
+      const payload = await upstream.clone().json() as { error?: { message?: string; code?: string } };
+      providerMessage = [payload.error?.code, payload.error?.message].filter(Boolean).join(': ');
+    } catch { /* provider may return a non-JSON body */ }
+    console.error('[AI interpret] DeepSeek rejected request:', { status: upstream.status, message: providerMessage.slice(0, 500) });
+    let message = 'DeepSeek 请求失败，请检查 API 配置后重试。';
+    if (upstream.status === 401 || upstream.status === 403) message = 'DeepSeek API Key 无效或没有调用权限，请检查 DEEPSEEK_API_KEY。';
+    else if (upstream.status === 402) message = 'DeepSeek 账户余额不足，请检查账户额度。';
+    else if (upstream.status === 404) message = 'DeepSeek 模型或接口不存在，请检查 DEEPSEEK_MODEL 配置。';
+    else if (upstream.status === 429) message = 'DeepSeek 请求频率过高或额度受限，请稍后重试并检查账户限额。';
+    else if (upstream.status >= 500) message = 'DeepSeek 服务暂时异常，请稍后重试。';
+    return jsonError(message, upstream.status >= 500 ? 503 : 502);
   }
 
   const encoder = new TextEncoder();

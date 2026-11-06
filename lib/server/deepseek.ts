@@ -59,6 +59,7 @@ export async function streamDeepSeek(
   if (!apiKey) return jsonError('尚未配置 DEEPSEEK_API_KEY，请在部署平台的环境变量中添加。', 503);
 
   const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90_000);
   request.signal.addEventListener('abort', () => controller.abort(), { once: true });
 
   let upstream: Response;
@@ -138,10 +139,12 @@ export async function streamDeepSeek(
           output.close();
         } catch { /* client disconnected */ }
       } finally {
+        clearTimeout(timeoutId);
         reader.releaseLock();
       }
     },
     cancel() {
+      clearTimeout(timeoutId);
       controller.abort();
     },
   });
